@@ -58,6 +58,10 @@ hvigorw --sync
 
 如果命令行打包提示找不到 Java Runtime，请在本机配置 JDK/JBR，或直接使用 DevEco Studio 内置运行环境。
 
+## GitHub 维护流程
+
+第一次维护开源项目可以参考 [GitHub 维护操作手册](docs/GitHub-Workflow.md)，里面包含分支、提交、推送和 PR 的完整流程图。
+
 ## 项目结构
 
 ```text

@@ -1,0 +1,20 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "看门的来来 - Authenticator"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "看门的来来 main entry"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "看门的来来"
+    },
+    {
+      "name": "camera_reason",
+      "value": "Used for scanning QR codes to add 2FA accounts"
+    }
+  ]
+}

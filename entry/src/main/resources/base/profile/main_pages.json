@@ -1,0 +1,12 @@
+{
+  "src": [
+    "pages/Index",
+    "features/AddAccountPage",
+    "features/AccountDetailPage",
+    "features/QRScannerPage",
+    "features/SettingsView",
+    "features/ExportView",
+    "features/ImportView",
+    "features/LockView"
+  ]
+}

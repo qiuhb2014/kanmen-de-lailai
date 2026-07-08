@@ -1,0 +1,34 @@
+# HarmonyOS / DevEco generated files
+.hvigor/
+oh_modules/
+entry/build/
+build/
+**/build/
+
+# Local IDE state
+.idea/
+*.iml
+
+# Local SDK/signing/user config
+local.properties
+signing-config.json5
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.cer
+*.csr
+*.pem
+*.key
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

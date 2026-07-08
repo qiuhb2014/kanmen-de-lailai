@@ -1,0 +1,10 @@
+{
+  "modelVersion": "5.0.0",
+  "name": "twofa",
+  "version": "1.0.0",
+  "description": "看门的来来 - 两步验证令牌",
+  "dependencies": {},
+  "devDependencies": {
+    "@ohos/hypium": "1.0.21"
+  }
+}

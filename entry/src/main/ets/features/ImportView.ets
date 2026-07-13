@@ -5,9 +5,11 @@ import { router } from '@kit.ArkUI';
 import { fileIo } from '@kit.CoreFileKit';
 import { picker } from '@kit.CoreFileKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { common } from '@kit.AbilityKit';
 import { accountStore } from '../store/AccountStore';
 import { BackupCrypto, BackupError } from '../crypto/BackupCrypto';
 import { TOTPAccount } from '../model/TOTPAccount';
+import { redirectToLockIfNeeded } from '../utils/LockGuard';
 import {
   COLOR_BACKGROUND,
   COLOR_BRAND,
@@ -30,9 +32,14 @@ struct ImportView {
   @State fileUri: string = '';
   @State fileName: string = '';
   @State password: string = '';
+  @State canDecrypt: boolean = false;
   @State busy: boolean = false;
   @State error: string = '';
   @State previewAccounts: TOTPAccount[] = [];
+
+  onPageShow(): void {
+    redirectToLockIfNeeded();
+  }
 
   build() {
     Column() {
@@ -131,7 +138,7 @@ struct ImportView {
         .margin({ top: 30 })
         .backgroundColor(COLOR_CARD)
         .borderRadius(RADIUS_BUTTON)
-        .onChange((v: string) => { this.password = v; })
+        .onChange((v: string) => this.updatePassword(v))
 
       if (this.error) {
         Text(this.error)
@@ -147,9 +154,10 @@ struct ImportView {
         .height(50)
         .margin({ bottom: 40 })
         .fontColor(COLOR_CARD)
-        .backgroundColor(this.password && !this.busy ? COLOR_BRAND : '#CCCCCC')
+        .backgroundColor(this.canDecrypt && !this.busy ? COLOR_BRAND : '#CCCCCC')
         .borderRadius(RADIUS_BUTTON)
-        .onClick(() => this.password && !this.busy ? this.doDecrypt() : null)
+        .enabled(this.canDecrypt && !this.busy)
+        .onClick(() => this.doDecrypt())
     }
     .width('100%')
     .layoutWeight(1)
@@ -204,6 +212,13 @@ struct ImportView {
         .backgroundColor(COLOR_BRAND)
         .borderRadius(RADIUS_BUTTON)
         .onClick(() => this.doImport())
+
+      if (this.error) {
+        Text(this.error)
+          .fontSize(13)
+          .fontColor(COLOR_DANGER)
+          .margin({ bottom: 16 })
+      }
     }
     .width('100%')
     .layoutWeight(1)
@@ -214,7 +229,11 @@ struct ImportView {
   private async pickFile(): Promise<void> {
     try {
       this.error = '';
-      const documentPicker = new picker.DocumentViewPicker(getContext(this));
+      const context = this.getUIContext().getHostContext() as common.UIAbilityContext | undefined;
+      if (!context) {
+        throw new Error('无法获取应用上下文');
+      }
+      const documentPicker = new picker.DocumentViewPicker(context);
       const options = new picker.DocumentSelectOptions();
       options.maxSelectNumber = 1;
       options.fileSuffixFilters = ['.json'];
@@ -232,15 +251,30 @@ struct ImportView {
 
   // MARK: - 解密
 
+  private updatePassword(value: string): void {
+    this.password = value;
+    this.canDecrypt = value.length > 0;
+  }
+
   private async doDecrypt(): Promise<void> {
+    if (!this.canDecrypt || this.busy) {
+      return;
+    }
     this.busy = true;
     this.error = '';
     try {
       const file = fileIo.openSync(this.fileUri, fileIo.OpenMode.READ_ONLY);
-      const stat = fileIo.statSync(file.fd);
-      const buf = new ArrayBuffer(stat.size);
-      fileIo.readSync(file.fd, buf);
-      fileIo.closeSync(file);
+      let buf: ArrayBuffer;
+      try {
+        const stat = fileIo.statSync(file.fd);
+        if (stat.size <= 0) {
+          throw new Error('备份文件为空');
+        }
+        buf = new ArrayBuffer(stat.size);
+        fileIo.readSync(file.fd, buf);
+      } finally {
+        fileIo.closeSync(file);
+      }
       const data = new Uint8Array(buf);
       this.previewAccounts = await BackupCrypto.import(data, this.password);
       if (this.previewAccounts.length === 0) {
@@ -262,8 +296,13 @@ struct ImportView {
   // MARK: - 导入
 
   private doImport(): void {
+    this.error = '';
+    accountStore.clearError();
     for (const acc of this.previewAccounts) {
-      accountStore.add(acc);
+      if (!accountStore.add(acc)) {
+        this.error = accountStore.lastError || `导入 ${acc.displayName} 失败`;
+        return;
+      }
     }
     router.back();
   }

@@ -7,6 +7,7 @@ import { vibrator } from '@kit.SensorServiceKit';
 import { TOTPAccount } from '../model/TOTPAccount';
 import { accountStore } from '../store/AccountStore';
 import { CountdownRing } from '../components/CountdownRing';
+import { redirectToLockIfNeeded } from '../utils/LockGuard';
 import {
   COLOR_BACKGROUND,
   COLOR_BORDER,
@@ -51,6 +52,7 @@ struct AccountDetailPage {
 
   onPageShow(): void {
     this.refreshAccount();
+    redirectToLockIfNeeded();
   }
 
   aboutToDisappear(): void {

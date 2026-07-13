@@ -21,6 +21,7 @@ export default class EntryAbility extends UIAbility {
 
     // 初始化 KeychainStore（拿到 context 后才能用 Preferences）
     KeychainStore.getInstance().init(this.context);
+    appLock.init(this.context);
     accountStore.load();
 
     windowStage.loadContent('pages/Index', (err) => {
@@ -38,7 +39,7 @@ export default class EntryAbility extends UIAbility {
 
   onForeground(): void {
     hilog.info(DOMAIN, TAG, 'EntryAbility onForeground');
-    // 不在这里解锁，Index/LockView 自己处理
+    appLock.lockIfEnabled();
   }
 
   onBackground(): void {

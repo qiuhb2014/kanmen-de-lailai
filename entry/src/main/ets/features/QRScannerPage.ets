@@ -6,6 +6,7 @@ import { scanBarcode, scanCore } from '@kit.ScanKit';
 import { router } from '@kit.ArkUI';
 import { AccountStore, accountStore } from '../store/AccountStore';
 import { parseOTPUri } from '../utils/OTPURI';
+import { redirectToLockIfNeeded } from '../utils/LockGuard';
 import { COLOR_BRAND, COLOR_CARD, COLOR_DANGER, RADIUS_BUTTON, RADIUS_CARD } from '../theme/DesignTokens';
 
 @Entry
@@ -17,6 +18,10 @@ struct QRScannerPage {
 
   aboutToAppear(): void {
     this.startScan();
+  }
+
+  onPageShow(): void {
+    redirectToLockIfNeeded();
   }
 
   private async startScan(): Promise<void> {

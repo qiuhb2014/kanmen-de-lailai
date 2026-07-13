@@ -4,6 +4,7 @@
 import { router } from '@kit.ArkUI';
 import { promptAction } from '@kit.ArkUI';
 import { appLock } from '../utils/AuthLock';
+import { redirectToLockIfNeeded } from '../utils/LockGuard';
 import { accountStore } from '../store/AccountStore';
 import {
   APP_NAME,
@@ -28,6 +29,10 @@ struct SettingsView {
   aboutToAppear(): void {
     this.enableLock = appLock.isEnabled;
     this.accountCount = accountStore.getAccounts().length;
+  }
+
+  onPageShow(): void {
+    redirectToLockIfNeeded();
   }
 
   build() {
@@ -176,14 +181,11 @@ struct SettingsView {
 
   private async toggleLock(on: boolean): Promise<void> {
     if (on) {
-      const originalLocked = appLock.isLocked;
-      appLock.isLocked = true;
-      const success = await appLock.unlock();
+      const success = await appLock.authenticate();
       if (success) {
         appLock.enable();
         this.enableLock = true;
       } else {
-        appLock.isLocked = originalLocked;
         this.enableLock = false;
       }
     } else {

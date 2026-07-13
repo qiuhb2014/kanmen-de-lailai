@@ -7,6 +7,7 @@ import { TOTPAccount } from '../model/TOTPAccount';
 import { Base32 } from '../utils/Base32';
 import { OTPAlgorithm } from '../crypto/TOTPGenerator';
 import { generateUuid } from '../utils/Random';
+import { redirectToLockIfNeeded } from '../utils/LockGuard';
 import {
   COLOR_BACKGROUND,
   COLOR_BORDER,
@@ -38,6 +39,10 @@ struct AddAccountPage {
 
   aboutToDisappear(): void {
     this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.OFFSET);
+  }
+
+  onPageShow(): void {
+    redirectToLockIfNeeded();
   }
 
   build() {

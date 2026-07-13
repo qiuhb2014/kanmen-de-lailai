@@ -69,9 +69,14 @@ struct AccountDetailPage {
           Scroll() {
             Column() {
               this.profileHeader()
-              this.codeCard()
-              this.copyCard()
-              this.infoCard()
+
+              Column() {
+                this.codeCard()
+                this.copyButton()
+                this.infoCard()
+              }
+              .width('100%')
+              .padding({ left: PAGE_PADDING, right: PAGE_PADDING })
             }
             .width('100%')
             .padding({ bottom: 40 })
@@ -149,6 +154,8 @@ struct AccountDetailPage {
         .fontSize(22)
         .fontWeight(FontWeight.Bold)
         .fontColor(COLOR_TEXT)
+        .width('100%')
+        .textAlign(TextAlign.Center)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .margin({ top: 26 })
@@ -205,28 +212,20 @@ struct AccountDetailPage {
     .backgroundColor(COLOR_CARD)
     .border({ width: 1, color: COLOR_BORDER })
     .borderRadius(RADIUS_CARD)
-    .margin({ left: PAGE_PADDING, right: PAGE_PADDING })
   }
 
   @Builder
-  copyCard() {
-    Column() {
-      this.copyIcon()
-
-      Text('复制')
-        .fontSize(17)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(COLOR_TEXT)
-        .margin({ top: 10 })
-    }
+  copyButton() {
+    Button('复制')
     .width('100%')
-    .height(96)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
-    .backgroundColor(COLOR_CARD)
-    .border({ width: 1, color: COLOR_BORDER })
-    .borderRadius(RADIUS_CARD)
-    .margin({ left: PAGE_PADDING, right: PAGE_PADDING, top: 24 })
+    .height(48)
+    .fontSize(16)
+    .fontWeight(FontWeight.Medium)
+    .fontColor(COLOR_CARD)
+    .backgroundColor(COLOR_BRAND)
+    .border({ width: 1, color: COLOR_BRAND })
+    .borderRadius(RADIUS_BUTTON)
+    .margin({ top: 24 })
     .onClick(() => {
       this.copy();
     })
@@ -246,7 +245,7 @@ struct AccountDetailPage {
     .backgroundColor(COLOR_CARD)
     .border({ width: 1, color: COLOR_BORDER })
     .borderRadius(RADIUS_CARD)
-    .margin({ left: PAGE_PADDING, right: PAGE_PADDING, top: 24 })
+    .margin({ top: 24 })
   }
 
   @Builder
@@ -530,28 +529,6 @@ struct AccountDetailPage {
     }
     .width('100%')
     .height('100%')
-  }
-
-  @Builder
-  copyIcon() {
-    Stack() {
-      Row()
-        .width(20)
-        .height(20)
-        .border({ width: 2, color: COLOR_BRAND })
-        .borderRadius(4)
-        .position({ x: 8, y: 8 })
-
-      Row()
-        .width(20)
-        .height(20)
-        .backgroundColor(COLOR_CARD)
-        .border({ width: 2, color: COLOR_BRAND })
-        .borderRadius(4)
-        .position({ x: 0, y: 0 })
-    }
-    .width(30)
-    .height(30)
   }
 
   @Builder

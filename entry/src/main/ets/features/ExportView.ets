@@ -2,13 +2,14 @@
 // 导出加密备份 —— 用户输入密码 → AES-256-GCM 加密 → 写文件
 //
 // 文件名格式：lailai-backup-YYYYMMDD-HHmm.json
-// 保存到 filesDir（应用沙箱），用户可拷贝到 iCloud/网盘/U 盘
+// 通过系统文件选择器保存，用户可自行选择目录
 
 import { router } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
-import { fileIo } from '@kit.CoreFileKit';
+import { fileIo, picker } from '@kit.CoreFileKit';
 import { accountStore } from '../store/AccountStore';
 import { BackupCrypto } from '../crypto/BackupCrypto';
+import { redirectToLockIfNeeded } from '../utils/LockGuard';
 import {
   COLOR_BACKGROUND,
   COLOR_BRAND,
@@ -30,8 +31,13 @@ struct ExportView {
   @State password: string = '';
   @State confirmPassword: string = '';
   @State busy: boolean = false;
+  @State isFormValid: boolean = false;
   @State error: string = '';
   @State successPath: string = '';
+
+  onPageShow(): void {
+    redirectToLockIfNeeded();
+  }
 
   build() {
     Column() {
@@ -107,9 +113,9 @@ struct ExportView {
 
         // 密码输入
         Column() {
-          this.passwordField('设置密码', this.password, false, (v: string) => { this.password = v; })
+          this.passwordField('设置密码', this.password, (v: string) => this.updatePassword(v))
           this.divider()
-          this.passwordField('再次输入', this.confirmPassword, false, (v: string) => { this.confirmPassword = v; })
+          this.passwordField('再次输入', this.confirmPassword, (v: string) => this.updateConfirmPassword(v))
         }
         .backgroundColor(COLOR_CARD)
         .borderRadius(RADIUS_CARD)
@@ -124,13 +130,14 @@ struct ExportView {
         }
 
         Button(this.busy ? '加密中...' : '生成备份文件')
-          .width('90%')
+          .width(`calc(100% - ${PAGE_PADDING * 2}vp)`)
           .height(50)
           .margin({ top: 30 })
           .fontColor(COLOR_CARD)
-          .backgroundColor(this.canExport ? COLOR_BRAND : '#CCCCCC')
+          .backgroundColor(this.isFormValid && !this.busy ? COLOR_BRAND : '#CCCCCC')
           .borderRadius(RADIUS_BUTTON)
-          .onClick(() => this.canExport ? this.doExport() : null)
+          .enabled(this.isFormValid && !this.busy)
+          .onClick(() => this.doExport())
 
         Text('加密算法：AES-256-GCM\n密码派生：PBKDF2-HMAC-SHA256（200,000 次迭代）')
           .fontSize(11)
@@ -168,7 +175,7 @@ struct ExportView {
         .textAlign(TextAlign.Center)
         .wordBreak(WordBreak.BREAK_ALL)
 
-      Text('建议拷贝到 iCloud Drive、华为云空间、U 盘等地方。\n切记保存好你的备份密码。')
+      Text('请妥善保存备份文件和密码。\n密码丢失后，备份无法恢复。')
         .fontSize(12)
         .fontColor(COLOR_TEXT_WEAK)
         .textAlign(TextAlign.Center)
@@ -191,7 +198,7 @@ struct ExportView {
   }
 
   @Builder
-  passwordField(label: string, value: string, _isOld: boolean, onChange: (v: string) => void) {
+  passwordField(label: string, value: string, onChange: (v: string) => void) {
     Row() {
       Text(label)
         .fontSize(15)
@@ -211,36 +218,55 @@ struct ExportView {
     Divider().color('#EEEEEE').margin({ left: 16 })
   }
 
-  // MARK: - 校验
+  private updatePassword(value: string): void {
+    this.password = value;
+    this.updateFormValidity();
+  }
 
-  private get canExport(): boolean {
-    return this.password.length >= 6 &&
-           this.password === this.confirmPassword &&
-           !this.busy;
+  private updateConfirmPassword(value: string): void {
+    this.confirmPassword = value;
+    this.updateFormValidity();
+  }
+
+  private updateFormValidity(): void {
+    this.isFormValid = this.password.length >= 6 && this.password === this.confirmPassword;
   }
 
   // MARK: - 执行
 
   private async doExport(): Promise<void> {
+    if (!this.isFormValid || this.busy) {
+      return;
+    }
     this.busy = true;
     this.error = '';
     try {
       const data = await BackupCrypto.export(accountStore.getAccounts(), this.password);
-      const context = getContext(this) as common.UIAbilityContext;
-      const filesDir = context.filesDir;
-      const fileName = `lailai-backup-${formatDate(new Date())}.json`;
-      const filePath = `${filesDir}/${fileName}`;
+      const context = this.getUIContext().getHostContext() as common.UIAbilityContext | undefined;
+      if (!context) {
+        throw new Error('无法获取应用上下文');
+      }
+      const documentPicker = new picker.DocumentViewPicker(context);
+      const options = new picker.DocumentSaveOptions();
+      options.newFileNames = [`lailai-backup-${formatDate(new Date())}`];
+      options.fileSuffixChoices = ['备份文件|.json'];
+      const result = await documentPicker.save(options);
+      if (!result || result.length === 0) {
+        return;
+      }
 
       const file = fileIo.openSync(
-        filePath,
-        fileIo.OpenMode.CREATE | fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.TRUNC
+        result[0],
+        fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.TRUNC
       );
-      // data 是 Uint8Array，转成 ArrayBuffer 再写
-      const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-      fileIo.writeSync(file.fd, buf);
-      fileIo.closeSync(file);
+      try {
+        const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+        fileIo.writeSync(file.fd, buf);
+      } finally {
+        fileIo.closeSync(file);
+      }
 
-      this.successPath = filePath;
+      this.successPath = result[0];
     } catch (e) {
       this.error = `导出失败：${(e as Error).message ?? e}`;
     } finally {

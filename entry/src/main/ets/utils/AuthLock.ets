@@ -8,20 +8,46 @@
 
 import { userAuth } from '@kit.UserAuthenticationKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { preferences } from '@kit.ArkData';
+import { common } from '@kit.AbilityKit';
+
+const LOCK_STORE_NAME = 'lailai_lock_settings';
+const LOCK_ENABLED_KEY = 'app_lock_enabled';
 
 @ObservedV2
 export class AppLock {
   @Trace isLocked: boolean = false;
   @Trace isEnabled: boolean = false;
   @Trace lastError: string = '';
+  private prefs: preferences.Preferences | null = null;
+
+  /** 必须在 EntryAbility 获得上下文后初始化。 */
+  init(context: common.UIAbilityContext): void {
+    try {
+      const options: preferences.Options = { name: LOCK_STORE_NAME };
+      this.prefs = preferences.getPreferencesSync(context, options);
+      this.isEnabled = this.prefs.getSync(LOCK_ENABLED_KEY, false) as boolean;
+      // 冷启动时，已启用的应用锁必须先完成认证才能进入应用。
+      this.isLocked = this.isEnabled;
+      this.lastError = '';
+    } catch (e) {
+      this.prefs = null;
+      this.isEnabled = false;
+      this.isLocked = false;
+      this.lastError = `应用锁初始化失败：${(e as Error).message ?? e}`;
+    }
+  }
 
   enable(): void {
     this.isEnabled = true;
+    this.isLocked = false;
+    this.persistEnabled();
   }
 
   disable(): void {
     this.isEnabled = false;
     this.isLocked = false;
+    this.persistEnabled();
   }
 
   /** App 进后台时调用 */
@@ -37,6 +63,11 @@ export class AppLock {
       this.isLocked = false;
       return true;
     }
+    return this.authenticate();
+  }
+
+  /** 即使尚未开启应用锁，也要求一次生物认证，用于确认开启操作。 */
+  async authenticate(): Promise<boolean> {
     try {
       const authParam: userAuth.AuthParam = {
         challenge: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]),
@@ -73,6 +104,20 @@ export class AppLock {
       }
       this.lastError = `认证失败：${err.message ?? err.code}`;
       return false;
+    }
+  }
+
+  private persistEnabled(): void {
+    if (!this.prefs) {
+      this.lastError = '应用锁存储未初始化';
+      return;
+    }
+    try {
+      this.prefs.putSync(LOCK_ENABLED_KEY, this.isEnabled);
+      this.prefs.flushSync();
+      this.lastError = '';
+    } catch (e) {
+      this.lastError = `保存应用锁设置失败：${(e as Error).message ?? e}`;
     }
   }
 }

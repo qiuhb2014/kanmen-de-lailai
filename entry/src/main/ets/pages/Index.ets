@@ -5,7 +5,7 @@ import { router } from '@kit.ArkUI';
 import { AccountStore, accountStore } from '../store/AccountStore';
 import { TOTPAccount } from '../model/TOTPAccount';
 import { AccountRow } from '../components/AccountRow';
-import { appLock } from '../utils/AuthLock';
+import { redirectToLockIfNeeded } from '../utils/LockGuard';
 import {
   APP_NAME,
   COLOR_BACKGROUND,
@@ -38,15 +38,12 @@ struct Index {
       this.tick = Date.now();
     }, 50);
 
-    if (appLock.isEnabled && appLock.isLocked) {
-      setTimeout(() => {
-        router.replaceUrl({ url: 'features/LockView' });
-      }, 50);
-    }
+    redirectToLockIfNeeded();
   }
 
   onPageShow(): void {
     this.refreshAccounts();
+    redirectToLockIfNeeded();
   }
 
   aboutToDisappear(): void {

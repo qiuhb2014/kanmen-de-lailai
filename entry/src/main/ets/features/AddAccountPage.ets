@@ -1,12 +1,13 @@
 // AddAccountPage.ets
 // 添加令牌：扫码或手动输入
 
-import { router } from '@kit.ArkUI';
+import { KeyboardAvoidMode, router } from '@kit.ArkUI';
 import { AccountStore, accountStore } from '../store/AccountStore';
 import { TOTPAccount } from '../model/TOTPAccount';
 import { Base32 } from '../utils/Base32';
 import { OTPAlgorithm } from '../crypto/TOTPGenerator';
 import { generateUuid } from '../utils/Random';
+import { redirectToLockIfNeeded } from '../utils/LockGuard';
 import {
   COLOR_BACKGROUND,
   COLOR_BORDER,
@@ -30,6 +31,19 @@ struct AddAccountPage {
   @State error: string = '';
   @State isFormValid: boolean = false;
   private store: AccountStore = accountStore;
+
+  aboutToAppear(): void {
+    // 键盘出现时仅压缩内容区，导航栏继续停留在页面顶部。
+    this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.RESIZE);
+  }
+
+  aboutToDisappear(): void {
+    this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.OFFSET);
+  }
+
+  onPageShow(): void {
+    redirectToLockIfNeeded();
+  }
 
   build() {
     Column() {

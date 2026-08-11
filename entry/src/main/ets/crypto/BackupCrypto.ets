@@ -5,8 +5,7 @@
 // 3. AES-GCM 加密 → combined 格式（nonce + ciphertext + tag）
 // 4. 写入 iCloud / Drive Kit / 用户指定位置
 //
-// 鸿蒙的 cryptoFramework 没有原生 PBKDF2 API，
-// 下面用 HMAC-SHA256 自行实现 RFC 2898 标准的 PBKDF2。
+// 密钥派生和加解密均使用鸿蒙 Crypto Architecture Kit 原生实现。
 
 import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 import { util } from '@kit.ArkTS';
@@ -18,6 +17,7 @@ import { secureRandomBytes } from '../utils/Random';
 const ITERATIONS = 200_000;
 const SALT_LEN = 16;
 const NONCE_LEN = 12;       // AES-GCM nonce
+const TAG_LEN = 16;         // AES-GCM authentication tag
 const KEY_LEN = 32;         // AES-256
 
 interface BackupPayload {
@@ -71,12 +71,18 @@ export class BackupCrypto {
 
     const cipher = cryptoFramework.createCipher('AES256|GCM|PKCS7');
     const symKey = await cryptoFramework.createSymKeyGenerator('AES256').convertKey({ data: key });
-    await cipher.init(cryptoFramework.CryptoMode.ENCRYPT_MODE, symKey, gcmParams(iv));
-    const encResult = await cipher.doFinal({ data: plainBytes });
-    const ciphertextWithTag = new Uint8Array(encResult.data);
+    const params = gcmParams(iv, new Uint8Array(TAG_LEN));
+    await cipher.init(cryptoFramework.CryptoMode.ENCRYPT_MODE, symKey, params);
+    const encResult = await cipher.update({ data: plainBytes });
+    const tagResult = await cipher.doFinal(null);
+    const ciphertext = new Uint8Array(encResult.data);
+    const authTag = new Uint8Array(tagResult.data);
+    if (authTag.length !== TAG_LEN) {
+      throw new BackupError('生成备份认证信息失败');
+    }
 
     // 4) 拼 combined = iv(12) + ciphertext + tag(16)
-    const combined = concatBytes(iv, ciphertextWithTag);
+    const combined = concatBytes(concatBytes(iv, ciphertext), authTag);
 
     // 5) 打包 JSON
     const payload: BackupPayload = {
@@ -103,21 +109,25 @@ export class BackupCrypto {
 
     const salt = fromBase64(payload.salt);
     const combined = fromBase64(payload.data);
-    if (combined.length < NONCE_LEN + 16) {
+    if (combined.length <= NONCE_LEN + TAG_LEN) {
       throw new BackupError('备份文件已损坏');
     }
     const iv = combined.slice(0, NONCE_LEN);
-    const ciphertextWithTag = combined.slice(NONCE_LEN);
+    const tagOffset = combined.length - TAG_LEN;
+    const ciphertext = combined.slice(NONCE_LEN, tagOffset);
+    const authTag = combined.slice(tagOffset);
 
     const key = await pbkdf2(password, salt, payload.iterations, KEY_LEN);
     const symKey = await cryptoFramework.createSymKeyGenerator('AES256').convertKey({ data: key });
 
     const cipher = cryptoFramework.createCipher('AES256|GCM|PKCS7');
-    await cipher.init(cryptoFramework.CryptoMode.DECRYPT_MODE, symKey, gcmParams(iv));
+    await cipher.init(cryptoFramework.CryptoMode.DECRYPT_MODE, symKey, gcmParams(iv, authTag));
 
     let plainBytes: Uint8Array;
     try {
-      const decResult = await cipher.doFinal({ data: ciphertextWithTag });
+      const decResult = await cipher.update({ data: ciphertext });
+      // GCM 在 doFinal 时校验认证标签，失败会抛出异常。
+      await cipher.doFinal(null);
       plainBytes = new Uint8Array(decResult.data);
     } catch {
       // AES-GCM auth tag 校验失败 = 密码错 或 文件被改
@@ -163,57 +173,30 @@ function utf8Decode(value: Uint8Array): string {
   return util.TextDecoder.create('utf-8').decodeToString(value);
 }
 
-function gcmParams(iv: Uint8Array): cryptoFramework.GcmParamsSpec {
+function gcmParams(iv: Uint8Array, authTag: Uint8Array): cryptoFramework.GcmParamsSpec {
   const params: cryptoFramework.GcmParamsSpec = {
     algName: 'GcmParamsSpec',
     iv: { data: iv },
     aad: { data: new Uint8Array(0) },
-    authTag: { data: new Uint8Array(16) },
+    authTag: { data: authTag },
   };
   return params;
 }
 
-// ============================================================
-// PBKDF2-HMAC-SHA256 自实现（RFC 2898）
-// ============================================================
-
 async function pbkdf2(password: string, salt: Uint8Array, iterations: number, keyLen: number): Promise<Uint8Array> {
-  const pwdBytes = utf8Encode(password);
-  const blockCount = Math.ceil(keyLen / 32);   // SHA-256 输出 32 字节
-  const result = new Uint8Array(blockCount * 32);
-
-  for (let i = 1; i <= blockCount; i++) {
-    // 第一个 block: U1 = HMAC(P, salt || INT(i))
-    const saltInt = new Uint8Array(salt.length + 4);
-    saltInt.set(salt, 0);
-    const view = new DataView(saltInt.buffer);
-    view.setUint32(salt.length, i, false);
-
-    let u = hmacSha256(pwdBytes, saltInt);
-    const block = new Uint8Array(u);
-
-    // 后续: Un = HMAC(P, U(n-1)), block = U1 XOR U2 XOR ... XOR Uc
-    for (let j = 1; j < iterations; j++) {
-      u = hmacSha256(pwdBytes, u);
-      for (let k = 0; k < block.length; k++) {
-        block[k] ^= u[k];
-      }
-    }
-
-    result.set(block, (i - 1) * 32);
+  const spec: cryptoFramework.PBKDF2Spec = {
+    algName: 'PBKDF2',
+    password: password,
+    salt: salt,
+    iterations: iterations,
+    keySize: keyLen,
+  };
+  const kdf = cryptoFramework.createKdf('PBKDF2|SHA256');
+  const secret = await kdf.generateSecret(spec);
+  if (secret.data.length !== keyLen) {
+    throw new BackupError('派生备份密钥失败');
   }
-
-  return result.slice(0, keyLen);
-}
-
-function hmacSha256(key: Uint8Array, data: Uint8Array): Uint8Array {
-  const keyBlob: cryptoFramework.DataBlob = { data: key };
-  const symKey = cryptoFramework.createSymKeyGenerator('HMAC|SHA256').convertKeySync(keyBlob);
-  const mac = cryptoFramework.createMac('HMAC|SHA256');
-  mac.initSync(symKey);
-  mac.updateSync({ data: data });
-  const result = mac.doFinalSync();
-  return new Uint8Array(result.data);
+  return new Uint8Array(secret.data);
 }
 
 // ============================================================

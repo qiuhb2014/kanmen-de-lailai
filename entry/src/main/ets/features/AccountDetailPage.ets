@@ -7,6 +7,7 @@ import { vibrator } from '@kit.SensorServiceKit';
 import { TOTPAccount } from '../model/TOTPAccount';
 import { accountStore } from '../store/AccountStore';
 import { CountdownRing } from '../components/CountdownRing';
+import { redirectToLockIfNeeded } from '../utils/LockGuard';
 import {
   COLOR_BACKGROUND,
   COLOR_BORDER,
@@ -14,9 +15,11 @@ import {
   COLOR_CARD,
   COLOR_DANGER,
   COLOR_FILL,
+  COLOR_MASK,
   COLOR_TEXT,
   COLOR_TEXT_WEAK,
   PAGE_PADDING,
+  RADIUS_BUTTON,
   RADIUS_CARD,
 } from '../theme/DesignTokens';
 
@@ -31,6 +34,11 @@ struct AccountDetailPage {
   @State account: TOTPAccount = new TOTPAccount();
   @State hasAccount: boolean = false;
   @State tick: number = Date.now();
+  @State showActions: boolean = false;
+  @State showRenameDialog: boolean = false;
+  @State showDeleteDialog: boolean = false;
+  @State editingName: string = '';
+  @State renameError: string = '';
   private timerId: number = -1;
 
   aboutToAppear(): void {
@@ -44,6 +52,7 @@ struct AccountDetailPage {
 
   onPageShow(): void {
     this.refreshAccount();
+    redirectToLockIfNeeded();
   }
 
   aboutToDisappear(): void {
@@ -54,24 +63,46 @@ struct AccountDetailPage {
   }
 
   build() {
-    Column() {
-      this.navBar()
+    Stack() {
+      Column() {
+        this.navBar()
 
-      if (this.hasAccount) {
-        Scroll() {
-          Column() {
-            this.profileHeader()
-            this.codeCard()
-            this.copyCard()
-            this.infoCard()
+        if (this.hasAccount) {
+          Scroll() {
+            Column() {
+              this.profileHeader()
+
+              Column() {
+                this.codeCard()
+                this.copyButton()
+                this.infoCard()
+              }
+              .width('100%')
+              .padding({ left: PAGE_PADDING, right: PAGE_PADDING })
+            }
+            .width('100%')
+            .padding({ bottom: 40 })
           }
-          .width('100%')
-          .padding({ bottom: 40 })
+          .layoutWeight(1)
+          .backgroundColor(COLOR_BACKGROUND)
+        } else {
+          this.missingState()
         }
-        .layoutWeight(1)
-        .backgroundColor(COLOR_BACKGROUND)
-      } else {
-        this.missingState()
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor(COLOR_BACKGROUND)
+
+      if (this.showActions) {
+        this.actionsSheet()
+      }
+
+      if (this.showRenameDialog) {
+        this.renameDialog()
+      }
+
+      if (this.showDeleteDialog) {
+        this.deleteDialog()
       }
     }
     .width('100%')
@@ -98,10 +129,18 @@ struct AccountDetailPage {
         .textOverflow({ overflow: TextOverflow.Ellipsis })
 
       Text('⋮')
-        .fontSize(30)
+        .fontSize(28)
         .fontColor(COLOR_TEXT)
-        .width(56)
-        .textAlign(TextAlign.End)
+        .width(40)
+        .height(40)
+        .textAlign(TextAlign.Center)
+        .border({ width: 1, color: COLOR_BORDER })
+        .borderRadius(RADIUS_BUTTON)
+        .onClick(() => {
+          if (this.hasAccount) {
+            this.showActions = true;
+          }
+        })
     }
     .width('100%')
     .padding({ left: PAGE_PADDING, right: PAGE_PADDING, top: 18, bottom: 12 })
@@ -117,6 +156,8 @@ struct AccountDetailPage {
         .fontSize(22)
         .fontWeight(FontWeight.Bold)
         .fontColor(COLOR_TEXT)
+        .width('100%')
+        .textAlign(TextAlign.Center)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .margin({ top: 26 })
@@ -130,7 +171,7 @@ struct AccountDetailPage {
     }
     .width('100%')
     .alignItems(HorizontalAlign.Center)
-    .padding({ top: 28, bottom: 34, left: 40, right: 40 })
+    .padding({ top: 28, bottom: 34, left: PAGE_PADDING, right: PAGE_PADDING })
   }
 
   @Builder
@@ -171,28 +212,22 @@ struct AccountDetailPage {
     .height(190)
     .justifyContent(FlexAlign.Center)
     .backgroundColor(COLOR_CARD)
+    .border({ width: 1, color: COLOR_BORDER })
     .borderRadius(RADIUS_CARD)
-    .margin({ left: PAGE_PADDING, right: PAGE_PADDING })
   }
 
   @Builder
-  copyCard() {
-    Column() {
-      this.copyIcon()
-
-      Text('复制')
-        .fontSize(17)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(COLOR_TEXT)
-        .margin({ top: 10 })
-    }
+  copyButton() {
+    Button('复制')
     .width('100%')
-    .height(96)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
-    .backgroundColor(COLOR_CARD)
-    .borderRadius(RADIUS_CARD)
-    .margin({ left: PAGE_PADDING, right: PAGE_PADDING, top: 24 })
+    .height(48)
+    .fontSize(16)
+    .fontWeight(FontWeight.Medium)
+    .fontColor(COLOR_CARD)
+    .backgroundColor(COLOR_BRAND)
+    .border({ width: 1, color: COLOR_BRAND })
+    .borderRadius(RADIUS_BUTTON)
+    .margin({ top: 24 })
     .onClick(() => {
       this.copy();
     })
@@ -210,8 +245,9 @@ struct AccountDetailPage {
       this.infoRow('创建时间', this.createdDateText())
     }
     .backgroundColor(COLOR_CARD)
+    .border({ width: 1, color: COLOR_BORDER })
     .borderRadius(RADIUS_CARD)
-    .margin({ left: PAGE_PADDING, right: PAGE_PADDING, top: 24 })
+    .margin({ top: 24 })
   }
 
   @Builder
@@ -251,29 +287,250 @@ struct AccountDetailPage {
     .height(size)
     .justifyContent(FlexAlign.Center)
     .backgroundColor(COLOR_FILL)
+    .border({ width: 1, color: COLOR_BORDER })
     .borderRadius(16)
   }
 
   @Builder
-  copyIcon() {
+  actionsSheet() {
     Stack() {
-      Row()
-        .width(20)
-        .height(20)
-        .border({ width: 2, color: COLOR_BRAND })
-        .borderRadius(4)
-        .position({ x: 8, y: 8 })
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(COLOR_MASK)
+        .onClick(() => {
+          this.showActions = false;
+        })
 
-      Row()
-        .width(20)
-        .height(20)
-        .backgroundColor(COLOR_CARD)
-        .border({ width: 2, color: COLOR_BRAND })
-        .borderRadius(4)
-        .position({ x: 0, y: 0 })
+      Column() {
+        Row() {
+          Text('更多操作')
+            .fontSize(20)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(COLOR_TEXT)
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
+        .margin({ bottom: 16 })
+
+        Row() {
+          Text('✎')
+            .fontSize(28)
+            .fontColor(COLOR_BRAND)
+            .width(48)
+            .height(48)
+            .textAlign(TextAlign.Center)
+            .backgroundColor('#E8F1FF')
+            .borderRadius(RADIUS_BUTTON)
+
+          Column() {
+            Text('修改名称')
+              .fontSize(18)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(COLOR_TEXT)
+            Text('编辑账户显示名称')
+              .fontSize(14)
+              .fontColor(COLOR_TEXT_WEAK)
+              .margin({ top: 4 })
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+          .margin({ left: 16 })
+        }
+        .width('100%')
+        .padding({ top: 12, bottom: 12 })
+        .onClick(() => {
+          this.openRenameDialog();
+        })
+
+        Row() {
+          Text('⌫')
+            .fontSize(28)
+            .fontColor(COLOR_DANGER)
+            .width(48)
+            .height(48)
+            .textAlign(TextAlign.Center)
+            .backgroundColor('#FFF0F0')
+            .borderRadius(RADIUS_BUTTON)
+
+          Column() {
+            Text('删除账户')
+              .fontSize(18)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(COLOR_DANGER)
+            Text('移除此账户的验证码')
+              .fontSize(14)
+              .fontColor(COLOR_TEXT_WEAK)
+              .margin({ top: 4 })
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+          .margin({ left: 16 })
+        }
+        .width('100%')
+        .padding({ top: 12, bottom: 12 })
+        .onClick(() => {
+          this.showActions = false;
+          this.showDeleteDialog = true;
+        })
+      }
+      .width('100%')
+      .backgroundColor(COLOR_CARD)
+      .border({ width: 1, color: COLOR_BORDER })
+      .borderRadius(24)
+      .padding({ left: PAGE_PADDING, right: PAGE_PADDING, top: 24, bottom: 28 })
+      .align(Alignment.Bottom)
     }
-    .width(30)
-    .height(30)
+    .width('100%')
+    .height('100%')
+  }
+
+  @Builder
+  renameDialog() {
+    Stack() {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(COLOR_MASK)
+        .onClick(() => {
+          this.dismissRenameDialog();
+        })
+
+      Column() {
+        Text('修改名称')
+          .fontSize(22)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(COLOR_TEXT)
+
+        Text('账户名称')
+          .fontSize(16)
+          .fontColor(COLOR_TEXT_WEAK)
+          .width('100%')
+          .margin({ top: 24, bottom: 10 })
+
+        TextInput({ placeholder: '例如 GitHub', text: this.editingName })
+          .width('100%')
+          .height(56)
+          .fontSize(18)
+          .fontColor(COLOR_TEXT)
+          .backgroundColor(COLOR_CARD)
+          .border({ width: 1, color: COLOR_BRAND })
+          .borderRadius(RADIUS_BUTTON)
+          .padding({ left: 16, right: 16 })
+          .onChange((value: string) => {
+            this.editingName = value;
+            this.renameError = '';
+          })
+
+        if (this.renameError) {
+          Text(this.renameError)
+            .fontSize(13)
+            .fontColor(COLOR_DANGER)
+            .width('100%')
+            .margin({ top: 8 })
+        }
+
+        Row() {
+          Button('取消')
+            .layoutWeight(1)
+            .height(48)
+            .fontSize(18)
+            .fontColor(COLOR_TEXT)
+            .backgroundColor(COLOR_CARD)
+            .border({ width: 1, color: COLOR_BORDER })
+            .borderRadius(RADIUS_BUTTON)
+            .onClick(() => {
+              this.dismissRenameDialog();
+            })
+
+          Button('保存')
+            .layoutWeight(1)
+            .height(48)
+            .fontSize(18)
+            .fontColor(COLOR_CARD)
+            .backgroundColor(COLOR_BRAND)
+            .border({ width: 1, color: COLOR_BRAND })
+            .borderRadius(RADIUS_BUTTON)
+            .margin({ left: 16 })
+            .onClick(() => {
+              this.saveRename();
+            })
+        }
+        .width('100%')
+        .margin({ top: 24 })
+      }
+      .width('82%')
+      .backgroundColor(COLOR_CARD)
+      .border({ width: 1, color: COLOR_BORDER })
+      .borderRadius(RADIUS_CARD)
+      .padding(24)
+      .alignItems(HorizontalAlign.Center)
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  @Builder
+  deleteDialog() {
+    Stack() {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(COLOR_MASK)
+        .onClick(() => {
+          this.showDeleteDialog = false;
+        })
+
+      Column() {
+        Text('删除账户')
+          .fontSize(22)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(COLOR_TEXT)
+
+        Text(`确定要删除“${this.account.displayName || '此账户'}”吗？删除后无法恢复。`)
+          .fontSize(16)
+          .fontColor(COLOR_TEXT_WEAK)
+          .textAlign(TextAlign.Center)
+          .margin({ top: 16 })
+
+        Row() {
+          Button('取消')
+            .layoutWeight(1)
+            .height(48)
+            .fontSize(18)
+            .fontColor(COLOR_TEXT)
+            .backgroundColor(COLOR_CARD)
+            .border({ width: 1, color: COLOR_BORDER })
+            .borderRadius(RADIUS_BUTTON)
+            .onClick(() => {
+              this.showDeleteDialog = false;
+            })
+
+          Button('确认删除')
+            .layoutWeight(1)
+            .height(48)
+            .fontSize(17)
+            .fontColor(COLOR_CARD)
+            .backgroundColor(COLOR_DANGER)
+            .border({ width: 1, color: COLOR_DANGER })
+            .borderRadius(RADIUS_BUTTON)
+            .margin({ left: 16 })
+            .onClick(() => {
+              this.deleteAccount();
+            })
+        }
+        .width('100%')
+        .margin({ top: 28 })
+      }
+      .width('82%')
+      .backgroundColor(COLOR_CARD)
+      .border({ width: 1, color: COLOR_BORDER })
+      .borderRadius(RADIUS_CARD)
+      .padding(24)
+      .alignItems(HorizontalAlign.Center)
+    }
+    .width('100%')
+    .height('100%')
   }
 
   @Builder
@@ -311,6 +568,58 @@ struct AccountDetailPage {
     } else {
       this.hasAccount = false;
     }
+  }
+
+  private openRenameDialog(): void {
+    this.showActions = false;
+    this.editingName = this.account.displayName;
+    this.renameError = '';
+    this.showRenameDialog = true;
+  }
+
+  private dismissRenameDialog(): void {
+    this.showRenameDialog = false;
+    this.renameError = '';
+  }
+
+  private saveRename(): void {
+    const name = this.editingName.trim();
+    if (name.length === 0) {
+      this.renameError = '账户名称不能为空';
+      return;
+    }
+
+    const updated = new TOTPAccount();
+    updated.id = this.account.id;
+    updated.issuer = name;
+    updated.account = this.account.account;
+    updated.secret = this.account.secret;
+    updated.digits = this.account.digits;
+    updated.period = this.account.period;
+    updated.algorithm = this.account.algorithm;
+    updated.createdAt = this.account.createdAt;
+
+    accountStore.clearError();
+    if (!accountStore.update(updated)) {
+      this.renameError = accountStore.lastError || '修改失败，请稍后重试';
+      return;
+    }
+
+    this.account = updated;
+    this.dismissRenameDialog();
+    this.showToast('修改成功');
+  }
+
+  private deleteAccount(): void {
+    accountStore.clearError();
+    if (!accountStore.delete(this.account.id)) {
+      this.showDeleteDialog = false;
+      this.showToast(accountStore.lastError || '删除失败，请稍后重试');
+      return;
+    }
+
+    this.showDeleteDialog = false;
+    router.back();
   }
 
   private findAccount(id: string): TOTPAccount | null {

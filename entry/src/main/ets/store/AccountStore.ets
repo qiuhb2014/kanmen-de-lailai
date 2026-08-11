@@ -43,12 +43,25 @@ export class AccountStore {
     }
   }
 
-  delete(id: string): void {
+  update(account: TOTPAccount): boolean {
+    try {
+      this.keychain.save(account);
+      this.load();
+      return true;
+    } catch (e) {
+      this.lastError = `更新失败：${(e as Error).message ?? e}`;
+      return false;
+    }
+  }
+
+  delete(id: string): boolean {
     try {
       this.keychain.delete(id);
       this.load();
+      return true;
     } catch (e) {
       this.lastError = `删除失败：${(e as Error).message ?? e}`;
+      return false;
     }
   }
 
